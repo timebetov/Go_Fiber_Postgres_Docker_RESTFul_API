@@ -70,6 +70,7 @@ POST `api/users`
 ```
 
 9. To update user
+PATCH `api/users/{:userId}`
 > Requires authorization: Role => Admin. Output: you get the user just updated
 > You can change specified fields if you want, or all fields such as: email, password, role
 ```JSON
@@ -85,10 +86,13 @@ POST `api/users`
 > Requires authorization: Role => Admin.
 > Here you have two options like: Soft deleting and Force deleting
 - In order to softly delete you have to perform request like:
+
 DELETE `api/users/{:userId}`
 - In order to force delete you have to perform following request:
+
 DELETE `api/users/{:userId}?force=true`
 
 11. You can restore the soft deleted user by:
 > Requires authorization: Role => Admin.
+
 PUT `api/users/{:userId}/restore`
