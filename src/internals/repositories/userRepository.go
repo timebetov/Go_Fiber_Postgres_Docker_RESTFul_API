@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"github.com/timebetov/readerblog/internals/models"
-	"github.com/timebetov/readerblog/internals/utils"
 	"gorm.io/gorm"
 )
 
@@ -22,15 +21,18 @@ func (r *userRepository) CreateUser(user *models.User) error {
 }
 
 // Getting all users from the database
-func (r *userRepository) FindAllUsers() ([]models.User, error) {
+func (r *userRepository) FindUsers(includeDeleted bool) ([]models.User, error) {
 	var users []models.User
-	err := r.db.Find(&users).Error
-	return users, err
-}
+	var err error
 
-func (r *userRepository) FindDeletedUsers() ([]models.User, error) {
-	var users []models.User
-	err := r.db.Unscoped().Where("deleted_at IS NOT NULL").Find(&users).Error
+	if includeDeleted {
+		// Fetch all users, including the soft-deleted ones
+		err = r.db.Unscoped().Where("deleted_at IS NOT NULL").Find(&users).Error
+	} else {
+		// Fetch all users, excluding the soft-deleted ones
+		err = r.db.Find(&users).Error
+	}
+
 	return users, err
 }
 
@@ -56,33 +58,15 @@ func (r *userRepository) UpdateUser(user *models.User) error {
 }
 
 // Delete one specific user by id in the database
-func (r *userRepository) SoftDeleteUser(user *models.User) error {
-	return r.db.Delete(user).Error
-}
-
-func (r *userRepository) ForceDeleteUser(user *models.User) error {
-	return r.db.Unscoped().Delete(user).Error
+func (r *userRepository) DeleteUser(force bool, user *models.User) error {
+	if force {
+		return r.db.Unscoped().Delete(user).Error
+	} else {
+		return r.db.Delete(user).Error
+	}
 }
 
 func (r *userRepository) RestoreUser(user *models.User) error {
 	user.DeletedAt = gorm.DeletedAt{}
 	return r.db.Save(user).Error
-}
-
-func (r *userRepository) SetRole(user *models.User, role string) error {
-	user.Role = role
-	return r.db.Save(user).Error
-}
-
-// Auth
-func (r *userRepository) FindUserByCredentials(username, password string) (*models.User, error) {
-	var user models.User
-	if err := r.db.First(&user, "username = ?", username).Error; err != nil {
-		return nil, err
-	}
-
-	if err := utils.CheckPassword(user.Password, password); err != nil {
-		return nil, err
-	}
-	return &user, nil
 }

@@ -3,21 +3,30 @@ package services
 import (
 	"errors"
 
-	"github.com/timebetov/readerblog/internals/models"
+	"github.com/timebetov/readerblog/internals/models/dtos"
 	"github.com/timebetov/readerblog/internals/repositories"
 	"github.com/timebetov/readerblog/internals/utils"
+	"gorm.io/gorm"
 )
 
 type AuthService struct {
-	repo repositories.UserRepository
+	repo repositories.AuthRepository
 }
 
-func NewAuthService(repo repositories.UserRepository) *AuthService {
+func NewAuthService(repo repositories.AuthRepository) *AuthService {
 	return &AuthService{repo}
 }
 
-func (s *AuthService) Authenticate(username, password string) (string, error) {
-	user, err := s.repo.FindUserByCredentials(username, password)
+func (as *AuthService) Authenticate(userDTO *dtos.LoginUserDTO) (string, error) {
+	// Converting the username field to lowercase and trim any spaces before and after
+	userDTO.Username = utils.TrimAndLower(userDTO.Username)
+
+	// Validate the user data
+	if err := utils.ValidateUser(userDTO); err != nil {
+		return "", err
+	}
+
+	user, err := as.repo.FindUserByCredentials(userDTO.Username, userDTO.Password)
 	if err != nil {
 		return "", errors.New("unfortunately, User not found")
 	}
@@ -31,17 +40,24 @@ func (s *AuthService) Authenticate(username, password string) (string, error) {
 	return token, nil
 }
 
-func (s *AuthService) GetUserProfile(username string) (*models.User, error) {
-	if user, err := s.repo.FindUserByUsername(username); err != nil {
+func (as *AuthService) GetUserProfile(username string) (*dtos.ProfileDTO, error) {
+	user, err := as.repo.FindSelf(username)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("user not found")
+		}
 		return nil, err
-	} else {
-		return user, nil
 	}
-}
 
-func (s *AuthService) RegisterUser(user *models.User) error {
-	if err := s.repo.CreateUser(user); err != nil {
-		return err
+	userDto := &dtos.ProfileDTO{
+		Username:    user.Username,
+		Email:       user.Email,
+		Role:        user.Role,
+		Subscribers: user.Subscribers,
+		Followed:    user.Followed,
+		Image:       user.Image,
+		CreatedAt:   user.CreatedAt,
 	}
-	return nil
+
+	return userDto, nil
 }

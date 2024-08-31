@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -11,19 +12,24 @@ var validate *validator.Validate
 
 // Custom (User) error messages
 var customMessages = map[string]string{
-	"Username.username": "Username can only contain Latin characters, no spaces, no special characters",
-	"Username.required": "Username is required",
-	"Username.min":      "Username must be at least 8 characters long",
-	"Username.max":      "Username must be at most 32 characters long",
-	"Email.required":    "Email is required",
-	"Email.email":       "Email must be a valid email address",
-	"Password.required": "Password is required",
-	"Password.min":      "Password must be at least 8 characters long",
+	"Username.username":             "Username can only contain Latin characters, no spaces, no special characters",
+	"Username.required":             "Username is required",
+	"Username.min":                  "Username must be at least 8 characters long",
+	"Username.max":                  "Username must be at most 32 characters long",
+	"Email.required":                "Email is required",
+	"Email.email":                   "Email must be a valid email address",
+	"Password.required":             "Password is required",
+	"Password.min":                  "Password must be at least 8 characters long",
+	"Password.max":                  "Password must be at most 32 characters long",
+	"PasswordConfirmation.required": "Password confirmation is required",
+	"PasswordConfirmation.eqfield":  "Passwords do not match",
+	"Role.min":                      "Role must be at least 5 characters long",
 }
 
+// Custom validation function for username field
 func usernameValidator(fl validator.FieldLevel) bool {
 	// Regular expression to allow only Latin characters (a-zA-Z), no spaces, no special characters
-	regex := regexp.MustCompile(`^[a-zA-Z]+$`)
+	regex := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
 	username := fl.Field().String()
 
 	// Check if the username matches the regex
@@ -57,4 +63,8 @@ func ValidateUser(data interface{}) error {
 		}
 	}
 	return nil
+}
+
+func TrimAndLower(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
 }

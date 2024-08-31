@@ -21,13 +21,20 @@ func SetupRoutes(app *fiber.App) {
 			"message": "API is up and running"})
 	})
 
-	// Initializing repository and controller
-	var userRepo = repositories.NewUserRepository(database.DB)
-	var authService = services.NewAuthService(userRepo)
-	var authController = controllers.NewAuthController(authService)
+	// Initializing repositories and controllers
+	userRepo := repositories.NewUserRepository(database.DB)
+	authRepo := repositories.NewAuthRepository(database.DB)
+
+	// AUTH
+	authService := services.NewAuthService(authRepo)
+	authController := controllers.NewAuthController(authService)
+
+	// USER
+	userService := services.NewUserService(userRepo)
+	userController := controllers.NewUserController(userService)
 
 	// Authentication routes
-	api.Post("/register", authController.Register)
+	api.Post("/register", userController.CreateUser)
 	api.Post("/login", authController.Login)
 	api.Get("/profile", middlewares.AuthMiddleware(os.Getenv("WRITER_ROLE")), authController.Profile)
 

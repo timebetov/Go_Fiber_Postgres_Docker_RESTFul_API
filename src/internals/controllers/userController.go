@@ -2,30 +2,36 @@ package controllers
 
 import (
 	"os"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/timebetov/readerblog/internals/models"
-	"github.com/timebetov/readerblog/internals/repositories"
-	"github.com/timebetov/readerblog/internals/utils"
+	"github.com/timebetov/readerblog/internals/models/dtos"
+	"github.com/timebetov/readerblog/internals/services"
 )
 
 type UserController struct {
-	Repo repositories.UserRepository
+	Service *services.UserService
 }
 
-func NewUserController(repo repositories.UserRepository) *UserController {
+func NewUserController(service *services.UserService) *UserController {
 	return &UserController{
-		Repo: repo,
+		Service: service,
 	}
 }
 
 // Getting all users
-func (userControl *UserController) GetUsers(c *fiber.Ctx) error {
+func (uc *UserController) GetUsers(c *fiber.Ctx) error {
+	// Getting query
+	deletedQuery := c.Query("deleted")
+
 	// Getting all users
-	users, err := userControl.Repo.FindAllUsers()
+	users, err := uc.Service.GetUsers(deletedQuery)
 	if err != nil {
+		if err.Error() == "invalid deleted query" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Invalid boolean value for 'deleted' query parameter",
+			})
+		}
 		return c.Status(500).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Could not retrieve users",
@@ -47,82 +53,43 @@ func (userControl *UserController) GetUsers(c *fiber.Ctx) error {
 		"data":    &users})
 }
 
-func (userControl *UserController) GetDeletedUsers(c *fiber.Ctx) error {
-	users, err := userControl.Repo.FindDeletedUsers()
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Could not retrieve users!",
-			"error":   err})
-	}
-	if len(users) == 0 {
-		return c.Status(404).JSON(fiber.Map{
-			"status":  "error",
-			"message": "No users found"})
-	}
-
-	// In case of success, return the users if found at least 1 user
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "Found deleted users!",
-		"data":    &users,
-	})
-}
-
 // Creating a brand new User
-func (userControl *UserController) CreateUser(c *fiber.Ctx) error {
-	user := new(models.User)
+func (uc *UserController) CreateUser(c *fiber.Ctx) error {
+	var userDTO dtos.CreateUserDTO
 
-	// Parse request body into user struct
-	if err := c.BodyParser(user); err != nil {
+	// Parse request body into userDTO struct
+	if err := c.BodyParser(&userDTO); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Review your input",
 			"data":    err})
 	}
 
-	// Converting the username field to lowercase and trim any spaces before and after
-	user.Username = strings.ToLower(strings.TrimSpace(user.Username))
-	user.Email = strings.ToLower(strings.TrimSpace(user.Email))
-
-	// Validate the user data
-	if err := utils.ValidateUser(user); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status": "error",
-			"error":  err.Error()})
-	}
-
-	// Hashing the password before saving it to the database
-	if hashedPassword, err := utils.HashPassword(user.Password); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to hash password!"})
-	} else {
-		user.Password = hashedPassword
-	}
-
-	// Saving the user to the database with UUID
-	user.ID = uuid.New()
-
-	if err := userControl.Repo.CreateUser(user); err != nil {
+	// Passing to the service layer to create a new user
+	createdUser, token, err := uc.Service.CreateUser(&userDTO)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Couldn't create user",
-			"data":    err})
+			"data":    err.Error(),
+		})
 	}
 
+	// Return in success case
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status":  "success",
-		"message": "User was created successfully!",
-		"data":    user})
+		"message": "User was registered successfully!",
+		"data":    createdUser,
+		"token":   token,
+	})
 }
 
-func (userControl *UserController) GetUser(c *fiber.Ctx) error {
+func (uc *UserController) GetUser(c *fiber.Ctx) error {
 	// Read the param userId
 	id := c.Params("userId")
 
 	// Getting the user or returning an error if not found
-	user, err := userControl.Repo.FindUserById(id)
+	user, err := uc.Service.GetUserById(id)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{
 			"status":  "error",
@@ -136,55 +103,42 @@ func (userControl *UserController) GetUser(c *fiber.Ctx) error {
 		"data":    user})
 }
 
-func (userControl *UserController) UpdateUser(c *fiber.Ctx) error {
-	// defining the struct for updating the user
-	type updateUser struct {
-		Email    string `json:"email" validate:"email"`
-		Password string `json:"password" validate:"min=8,max=32"`
-	}
+func (uc *UserController) UpdateUser(c *fiber.Ctx) error {
+	var userDTO dtos.UpdateUserDTO
 
 	// Getting the userId from params
 	id := c.Params("userId")
 
-	// Getting the user or returning an error if not found
-	user, err := userControl.Repo.FindUserById(id)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"status":  "error",
-			"message": "No user found with ID"})
-	}
-
-	var updateUserData updateUser
-	if err := c.BodyParser(&updateUserData); err != nil {
+	// Parsing the request body into userDTO
+	if err := c.BodyParser(&userDTO); err != nil {
 		return c.Status(500).JSON(fiber.Map{
 			"status":  "erorr",
 			"message": "Review your input"})
 	}
 
-	// Validate the user data
-	if err := utils.ValidateUser(updateUserData); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status": "error",
-			"error":  err.Error()})
-	}
-
-	user.Email = updateUserData.Email
-
-	// Hashing the password before saving it to the database
-	if hashedPassword, err := utils.HashPassword(updateUserData.Password); err != nil {
+	user, err := uc.Service.UpdateUser(id, &userDTO)
+	if err != nil {
+		if err.Error() == "user not found" {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"status":  "error",
+				"message": "No user found with ID",
+			})
+		} else if err.Error() == "invalid role" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Invalid role",
+				"allowed": []string{os.Getenv("ADMIN_ROLE"), os.Getenv("WRITER_ROLE")},
+			})
+		} else if err.Error() == "passwords do not match" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Passwords do not match",
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Failed to hash password!"})
-	} else {
-		user.Password = hashedPassword
-	}
-
-	// Saving changes
-	if err = userControl.Repo.UpdateUser(user); err != nil {
-		return c.Status(500).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Couldn't update user",
-			"data":    err})
+			"status": "error",
+			"error":  err.Error(),
+		})
 	}
 
 	// Returning the updated user
@@ -194,23 +148,29 @@ func (userControl *UserController) UpdateUser(c *fiber.Ctx) error {
 		"data":    user})
 }
 
-func (userControl *UserController) SoftDeleteUser(c *fiber.Ctx) error {
+func (uc *UserController) DeleteUser(c *fiber.Ctx) error {
 	// Read the param userId
 	id := c.Params("userId")
+	// Read the query 'force'
+	forceQuery := c.Query("force")
 
-	user, err := userControl.Repo.FindUserById(id)
+	user, err := uc.Service.DeleteUser(forceQuery, id)
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"status":  "error",
-			"message": "No user found with ID",
-			"data":    nil})
-	}
-
-	if err = userControl.Repo.SoftDeleteUser(user); err != nil {
+		if err.Error() == "user not found" {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"status":  "error",
+				"message": "No user found with ID"})
+		} else if err.Error() == "invalid force query" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Invalid boolean value for 'force' query parameter",
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Couldn't delete user",
-			"data":    err})
+			"error":   err.Error(),
+		})
 	}
 
 	// Return success message
@@ -219,111 +179,29 @@ func (userControl *UserController) SoftDeleteUser(c *fiber.Ctx) error {
 		"message": "User: " + user.Username + " was deleted successfully"})
 }
 
-func (userControl *UserController) ForceDeleteUser(c *fiber.Ctx) error {
-	// Read the param userId
-	id := c.Params("userId")
-
-	user, err := userControl.Repo.FindUserById(id)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"status":  "error",
-			"message": "No user found with ID"})
-	}
-
-	if err = userControl.Repo.ForceDeleteUser(user); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Couldn't delete user",
-			"data":    err})
-	}
-
-	// Return success message
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "User: " + user.Username + " was permanently deleted successfully",
-	})
-}
-
-func (userControl *UserController) RestoreUser(c *fiber.Ctx) error {
+func (uc *UserController) RestoreUser(c *fiber.Ctx) error {
 	// Read the param userId
 	id := c.Params("userId")
 
 	// Getting the specified user
-	user, err := userControl.Repo.FindUserById(id)
+	user, err := uc.Service.RestoreUser(id)
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"status":  "error",
-			"message": "No user found with ID"})
-	}
-
-	// Restoring the user
-	err = userControl.Repo.RestoreUser(user)
-	if err != nil {
+		if err.Error() == "user not found" {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"status":  "error",
+				"message": "No user found with ID",
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Couldn't restore user",
-			"data":    err})
+			"data":    err.Error(),
+		})
 	}
 
 	// Return success message
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  "success",
 		"message": "User: " + user.Username + " was restored successfully",
-	})
-}
-
-func (userControl *UserController) SetUserRole(c *fiber.Ctx) error {
-	type UseRole struct {
-		Role string `json:"role" validate:"required,min=5"`
-	}
-	// Read the param userId
-	id := c.Params("userId")
-
-	// Getting the specified user
-	user, err := userControl.Repo.FindUserById(id)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"status":  "error",
-			"message": "No user found with ID"})
-	}
-
-	var userole UseRole
-
-	// Getting the role to set from the body
-	if err := c.BodyParser(&userole); err != nil {
-		return c.Status(500).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Review your input",
-			"data":    err})
-	}
-
-	if err := utils.ValidateUser(userole); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status": "error",
-			"error":  err.Error()})
-	}
-
-	// Check if is role matches with the allowed roles
-	userole.Role = strings.ToLower(userole.Role)
-	if userole.Role != os.Getenv("ADMIN_ROLE") || userole.Role != os.Getenv("READER_ROLE") {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Invalid role",
-		})
-	}
-
-	// Setting the role
-	err = userControl.Repo.SetRole(user, userole.Role)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  "error",
-			"message": "Couldn't set role",
-			"data":    err})
-	}
-
-	// Return in success
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"status":  "success",
-		"message": "Role was set successfully",
 	})
 }
