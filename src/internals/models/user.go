@@ -10,7 +10,7 @@ type User struct {
 	ID          uuid.UUID      `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
 	Username    string         `gorm:"unique;not null" json:"username"`
 	Email       string         `gorm:"unique;not null" json:"email"`
-	Password    string         `gorm:"not null" json:"password" validate:"required,min=8,max=32"`
+	Password    string         `gorm:"not null" json:"password"`
 	Role        string         `gorm:"not null;default:'writer'"`
 	Subscribers uint           `gorm:"default:0"`
 	Followed    uint           `gorm:"default:0"`

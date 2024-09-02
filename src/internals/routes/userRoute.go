@@ -1,30 +1,22 @@
 package routes
 
 import (
-	"os"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/timebetov/readerblog/database"
 	"github.com/timebetov/readerblog/internals/controllers"
 	"github.com/timebetov/readerblog/internals/middlewares"
-	"github.com/timebetov/readerblog/internals/repositories"
 	"github.com/timebetov/readerblog/internals/services"
 )
 
-func SetupUserRoutes(router fiber.Router) {
-	user := router.Group("/users")
-	user.Use(middlewares.AuthMiddleware(os.Getenv("ADMIN_ROLE")))
+// All routes related to user
+func SetupUserRoutes(api fiber.Router, authService *services.AuthService, userController *controllers.UserController) {
+	users := api.Group("/users")
+	users.Use(middlewares.AuthenticationMiddleware(authService))
+	users.Use(middlewares.AuthorizationMiddleware())
 
-	// Initializing the user repository and controller
-	userRepository := repositories.NewUserRepository(database.DB)
-	userService := services.NewUserService(userRepository)
-	userController := controllers.NewUserController(userService)
-
-	// Setting up user routes
-	user.Post("/", userController.CreateUser)
-	user.Get("/", userController.GetUsers)
-	user.Get("/:userId", userController.GetUser)
-	user.Patch("/:userId", userController.UpdateUser)
-	user.Delete("/:userId", userController.DeleteUser)
-	user.Put("/:userId/restore", userController.RestoreUser)
+	users.Post("/", userController.CreateUser)
+	users.Get("/", userController.GetUsers)
+	users.Get("/:userId", userController.GetUser)
+	users.Patch("/:userId", userController.UpdateUser)
+	users.Delete("/:userId", userController.DeleteUser)
+	users.Put("/:userId/restore", userController.RestoreUser)
 }

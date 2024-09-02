@@ -55,19 +55,20 @@ func (us *UserService) GetUsers(deletedQuery string) ([]models.User, error) {
 	return users, nil
 }
 
-func (us *UserService) CreateUser(userDTO *dtos.CreateUserDTO) (*models.User, string, error) {
+func (us *UserService) CreateUser(userDTO *dtos.CreateUserDTO) (*models.User, error) {
 	// Converting the username field to lowercase and trim any spaces before and after
 	userDTO.Username = utils.TrimAndLower(userDTO.Username)
 	userDTO.Email = utils.TrimAndLower(userDTO.Email)
 
+	// Validating user data
 	if err := utils.ValidateUser(userDTO); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	// Hashing the password
 	hashedPassword, err := utils.HashPassword(userDTO.Password)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	// Creating a new user instance
@@ -78,20 +79,12 @@ func (us *UserService) CreateUser(userDTO *dtos.CreateUserDTO) (*models.User, st
 		Password: hashedPassword,
 	}
 
-	// Saving the user to the database
 	if err := us.repo.CreateUser(user); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	// Generating the token
-	token, err := utils.GenerateToken(user.Username, user.Role)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return user, token, nil
+	return user, nil
 }
-
 func (us *UserService) UpdateUser(id string, userDTO *dtos.UpdateUserDTO) (*models.User, error) {
 	// Fetching the user from the database
 	user, err := us.repo.FindUserById(id)

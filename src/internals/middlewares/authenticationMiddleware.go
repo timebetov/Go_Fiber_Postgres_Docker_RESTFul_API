@@ -4,10 +4,11 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/timebetov/readerblog/internals/services"
 	"github.com/timebetov/readerblog/internals/utils"
 )
 
-func AuthMiddleware(requiredRole string) fiber.Handler {
+func AuthenticationMiddleware(authService *services.AuthService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
@@ -26,10 +27,11 @@ func AuthMiddleware(requiredRole string) fiber.Handler {
 			})
 		}
 
-		if claims.Role != requiredRole && claims.Role != "admin" {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+		// Check if the token is blacklisted
+		if authService.IsTokenBlacklisted(tokenStr) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"status":  "error",
-				"message": "insufficient permissions",
+				"message": "Token has been blacklisted",
 			})
 		}
 

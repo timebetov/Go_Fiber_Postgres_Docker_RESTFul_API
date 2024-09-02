@@ -66,7 +66,7 @@ func (uc *UserController) CreateUser(c *fiber.Ctx) error {
 	}
 
 	// Passing to the service layer to create a new user
-	createdUser, token, err := uc.Service.CreateUser(&userDTO)
+	createdUser, err := uc.Service.CreateUser(&userDTO)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -80,7 +80,6 @@ func (uc *UserController) CreateUser(c *fiber.Ctx) error {
 		"status":  "success",
 		"message": "User was registered successfully!",
 		"data":    createdUser,
-		"token":   token,
 	})
 }
 

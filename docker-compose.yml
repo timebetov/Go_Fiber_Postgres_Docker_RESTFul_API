@@ -7,6 +7,7 @@ services:
       - "3000:3000"
     depends_on:
       - db
+      - redis
     volumes:
       - ./src:/app
     working_dir: /app
@@ -23,5 +24,10 @@ services:
     volumes:
       - ./db_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+  
+  redis:
+    image: redis:alpine
+    ports:
+      - 6379:6379
 volumes:
   db_data:

@@ -1,8 +1,11 @@
 package services
 
 import (
+	"context"
 	"errors"
+	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/timebetov/readerblog/internals/models/dtos"
 	"github.com/timebetov/readerblog/internals/repositories"
 	"github.com/timebetov/readerblog/internals/utils"
@@ -10,11 +13,40 @@ import (
 )
 
 type AuthService struct {
-	repo repositories.AuthRepository
+	repo        repositories.AuthRepository
+	userService *UserService
+	redisClient *redis.Client
 }
 
-func NewAuthService(repo repositories.AuthRepository) *AuthService {
-	return &AuthService{repo}
+var ctx = context.Background()
+
+func NewAuthService(repo repositories.AuthRepository, userService *UserService, redisClient *redis.Client) *AuthService {
+	return &AuthService{repo, userService, redisClient}
+}
+
+func (as *AuthService) RegisterUser(userDTO *dtos.CreateUserDTO) (*dtos.ProfileDTO, string, error) {
+	user, err := as.userService.CreateUser(userDTO)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Generating the token
+	token, err := utils.GenerateToken(user.Username, user.Role)
+	if err != nil {
+		return nil, "", err
+	}
+
+	userDto := &dtos.ProfileDTO{
+		Username:    user.Username,
+		Email:       user.Email,
+		Role:        user.Role,
+		Subscribers: user.Subscribers,
+		Followed:    user.Followed,
+		Image:       user.Image,
+		CreatedAt:   user.CreatedAt,
+	}
+
+	return userDto, token, nil
 }
 
 func (as *AuthService) Authenticate(userDTO *dtos.LoginUserDTO) (string, error) {
@@ -38,6 +70,25 @@ func (as *AuthService) Authenticate(userDTO *dtos.LoginUserDTO) (string, error) 
 	}
 
 	return token, nil
+}
+
+func (as *AuthService) Logout(token string) error {
+	claims, err := utils.ParseToken(token)
+	if err != nil {
+		return err
+	}
+	// Using the token's expiration time for Redis expiration
+	expiration := time.Until(claims.ExpiresAt.Time)
+	if expiration < 0 {
+		expiration = 0
+	}
+
+	return as.redisClient.Set(ctx, token, "blacklisted", expiration).Err()
+}
+
+func (as *AuthService) IsTokenBlacklisted(token string) bool {
+	_, err := as.redisClient.Get(ctx, token).Result()
+	return err == nil
 }
 
 func (as *AuthService) GetUserProfile(username string) (*dtos.ProfileDTO, error) {
